@@ -210,6 +210,7 @@ void loop() {
               initiateMovement(50);
               driveIndex++;
             }
+            break;
           
           case 3:
             if(!movementComplete){
@@ -239,6 +240,7 @@ void loop() {
                 driveIndex = 1;
               }
             }
+            break;
         }
 
     }
@@ -286,11 +288,14 @@ void initiateTurn(int angle) {
     // Calculate the radius of the wheel
     float wheelRadius = 3;
 
+    // Circumference
+    float cir = wheelRadius * 2 * PI;
+
     // Convert angle to radians
     float angleRad = angle * PI / 180.0;
 
     // Calculate the distance traveled by one wheel for a 90-degree rotation
-    float distance = wheelRadius * angleRad; //1.5 to account for measurment error
+    float distance = cir * angleRad; 
 
     // Convert distance to encoder counts
     targetCount = distanceToEncoderCounts(distance);
