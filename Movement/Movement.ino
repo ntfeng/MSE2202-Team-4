@@ -53,7 +53,7 @@ Encoders RightEncoder = Encoders();                                            /
 unsigned int robotModeIndex = 0;  
 volatile int turnChange = 1;
 volatile int numOfLoops = 0;
-unsigned int maxLoops = 2;
+unsigned int maxLoops = 1;
 
 Adafruit_NeoPixel SmartLEDs(SMART_LED_COUNT, SMART_LED, NEO_RGB + NEO_KHZ800);
 
@@ -180,9 +180,9 @@ void loop() {
         switch(driveIndex){
           case 0:
             leftDriveSpeed = map(4095, 0, 4095, cMinPWM, cMaxPWM);
-            rightDriveSpeed = map(4095, 0, 4095, cMinPWM, cMaxPWM);
+            rightDriveSpeed = map(4095, 0, 4095, cMinPWM, cMaxPWM) * 0.94;
             Bot.Stop("D1");  
-            initiateMovement(50);
+            initiateMovement(100);
             numOfLoops=0;
             driveIndex++;
             break;
@@ -201,9 +201,9 @@ void loop() {
             Serial.println(turnChange);
             if(!turnComplete){
               if(turnChange>0){
-                Bot.Right("D1", leftDriveSpeed, rightDriveSpeed);
-              } else {
                 Bot.Left("D1", leftDriveSpeed, rightDriveSpeed);
+              } else {
+                Bot.Right("D1", leftDriveSpeed, rightDriveSpeed);
               }
               isTurnComplete();
             } else {
@@ -225,23 +225,49 @@ void loop() {
           case 4:
             if(!turnComplete){
               if(turnChange>0){
-                Bot.Right("D1", leftDriveSpeed, rightDriveSpeed);
-              } else {
                 Bot.Left("D1", leftDriveSpeed, rightDriveSpeed);
+              } else {
+                Bot.Right("D1", leftDriveSpeed, rightDriveSpeed);
               }
               isTurnComplete();
             } else {
-              initiateMovement(50);
               if(numOfLoops >= maxLoops){
+                initiateTurn(90);
                 driveIndex++;
               } else {
+                initiateMovement(100);
                 numOfLoops++;
                 turnChange = turnChange*-1;
                 driveIndex = 1;
               }
             }
             break;
+          
+          case 5:
+            if(!turnComplete){
+              Bot.Right("D1", leftDriveSpeed, rightDriveSpeed);
+              isTurnComplete();
+            } else{
+              initiateMovement(100);
+              driveIndex++;
+            }
+            break;
+          
+          case 6:
+            if(!movementComplete){
+              Bot.Forward("D1",leftDriveSpeed, rightDriveSpeed);
+              checkMovementCompletion();
+            } else{
+              Bot.Stop("D1");
+              driveIndex++;
+            }
+            break;
         }
+        break;
+      
+      case 2:
+        robotModeIndex=0;
+        break;
 
     }
 
@@ -286,7 +312,7 @@ void checkMovementCompletion() {
 
 void initiateTurn(int angle) {
     // Calculate the radius of the wheel
-    float wheelRadius = 3;
+    float wheelRadius = 1;
 
     // Circumference
     float cir = wheelRadius * 2 * PI;
