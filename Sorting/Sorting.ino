@@ -299,12 +299,12 @@ void loop() {
           
           case 1:
             if(servoTickCount < 120){
-              if(timeUp500msec){
+              if(timeUp200msec){
                 Serial.println(servoTickCount);
                 servoTickCount += servoIncr;
                 Bot.ToPosition("S1", degreesToDutyCycle(servoTickCount));
-                timeUp500msec=false;
-                timerCount500msec=0;
+                timeUp200msec=false;
+                timerCount200msec=0;
               }
               // if(timeUp500msec){
               //   Serial.println(servoTickCount);
@@ -321,12 +321,12 @@ void loop() {
 
           case 2:
             if(servoTickCount < 120){
-              if(timeUp500msec){
+              if(timeUp200msec){
                 Serial.println(servoTickCount);
                 servoTickCount += servoIncr;
                 Bot.ToPosition("S1", degreesToDutyCycle(120-servoTickCount));
-                timeUp500msec=false;
-                timerCount500msec=0;
+                timeUp200msec=false;
+                timerCount200msec=0;
               }
               // if(timeUp500msec){
               //   Serial.println(servoTickCount);
