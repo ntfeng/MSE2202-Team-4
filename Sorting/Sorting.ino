@@ -33,7 +33,7 @@ void ARDUINO_ISR_ATTR timerISR();
 #define SERVO_ARM 41
 #define S_STEP_PIN 40                     // GPIO pin for step signal to A4988
 #define D_STEP_PIN 39                     // GPIO pin for direction signal to A4988
-#define SERVO_BACK_DOOR 44
+#define SERVO_BACK_DOOR 42
 #define SERVO_SORT 45
 #define cSDA 47                    // GPIO pin for I2C data
 #define cSCL 48                    // GPIO pin for I2C clock
