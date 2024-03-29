@@ -30,11 +30,13 @@ void ARDUINO_ISR_ATTR timerISR();
 #define SMART_LED_COUNT     1                                                  // number of SMART LEDs in use
 
 
-#define SERVO_ARM 41
+#define SERVO_ARM 43
+#define SERVO_DOOR_L 41
 #define S_STEP_PIN 40                     // GPIO pin for step signal to A4988
 #define D_STEP_PIN 39                     // GPIO pin for direction signal to A4988
+#define SERVO_DOOR_R 45
 #define SERVO_BACK_DOOR 44
-#define SERVO_SORT 43
+#define SERVO_SORT 42
 #define cSDA 47                    // GPIO pin for I2C data
 #define cSCL 48                    // GPIO pin for I2C clock
 #define cTCSLED 14                    // GPIO pin for LED on TCS34725
@@ -51,8 +53,6 @@ boolean timeUp5sec = false;
 boolean timeUp3sec = false;                                                    // 3 second timer elapsed flag
 boolean timeUp2sec = false;                                                    // 2 second timer elapsed flag
 boolean timeUp200msec = false;  
-boolean timeUp500msec = false;
-boolean timeUpsec = false;
 boolean movementComplete = false;
 boolean valuableDetected = false;
 boolean stepDir = false;
@@ -65,8 +65,6 @@ unsigned long timerCount5sec = 0;
 unsigned long timerCount3sec = 0;                                              // 3 second timer count in milliseconds
 unsigned long timerCount2sec = 0;                                              // 2 second timer count in milliseconds
 unsigned long timerCount200msec = 0;                                           // 200 millisecond timer count in milliseconds
-unsigned long timerCount500msec = 0;
-unsigned long timerCountsec = 0;
 unsigned long servoIncr = 10;
 unsigned long servoTickCount = 0;
 unsigned long displayTime;                                                     // heartbeat LED update timer
@@ -125,13 +123,12 @@ void setup() {
   pinMode(MODE_BUTTON, INPUT_PULLUP);                                         // Set up mode pushbutton
 
   // Servos
-  Bot.servoBegin("S1", SERVO_ARM); 
+  Bot.servoBegin("S1", SERVO_DOOR_L); 
   Bot.servoBegin("S2", SERVO_SORT); 
   Bot.servoBegin("S3", SERVO_BACK_DOOR); 
+  Bot.servoBegin("S4", SERVO_ARM); 
 
   Bot.ToPosition("S1", degreesToDutyCycle(0));
-  Bot.ToPosition("S2", degreesToDutyCycle(35));
-  Bot.ToPosition("S3", degreesToDutyCycle(180));
   // pinMode(SERVO_DOOR_L, OUTPUT);                      // configure servo GPIO for output
   // ledcSetup(SERVO_DOOR_L, 50, 14);                // setup for channel for 50 Hz, 14-bit resolution
 
@@ -155,8 +152,7 @@ void setup() {
   
   Wire.setPins(cSDA, cSCL);                           // set I2C pins for TCS34725
   pinMode(cTCSLED, OUTPUT);                           // configure GPIO to control LED on TCS34725
-  //pinMode(cLEDSwitch, INPUT_PULLUP);                  // configure GPIO to set state of TCS34725 LED 
-  digitalWrite(cTCSLED, !digitalRead(cLEDSwitch));    // turn on onboard LED if switch state is low (on position)
+  pinMode(cLEDSwitch, INPUT_PULLUP);                  // configure GPIO to set state of TCS34725 LED 
   modePBDebounce = 0;                                                         // reset debounce timer count
 
   pTimer = timerBegin(0, 80, true);                    // start timer 0 (1 of 4) with divide by 80 prescaler for 1 MHz resolution
@@ -194,19 +190,6 @@ void loop() {
     if (timerCount2sec > 2000) {                                             // if 2 seconds have elapsed
       timerCount2sec = 0;                                                   // reset 2 second timer count
       timeUp2sec = true;                                                    // indicate that 2 seconds have elapsed
-    }
-
-    
-    timerCount500msec = timerCount500msec + 1;                                     
-    if (timerCount500msec > 500) {                                             
-      timerCount500msec = 0;                                                   
-      timeUp500msec = true;                                                    
-    }
-
-    timerCountsec = timerCountsec + 1;                                     
-    if (timerCountsec > 1000) {                                             
-      timerCountsec = 0;                                                   
-      timeUpsec = true;                                                    
     }
    
     // 200 millisecond timer, counts 200 milliseconds
@@ -285,56 +268,31 @@ void loop() {
         
         switch(driveIndex){
           case 0:
-            // leftDriveSpeed = map(4095, 0, 4095, cMinPWM, cMaxPWM);
-            // rightDriveSpeed = map(4095, 0, 4095, cMinPWM, cMaxPWM) * 0.94;
-            // Bot.Stop("D1");  
-            // initiateMovement(100);
-            // numOfLoops=0;
+            leftDriveSpeed = map(4095, 0, 4095, cMinPWM, cMaxPWM);
+            rightDriveSpeed = map(4095, 0, 4095, cMinPWM, cMaxPWM) * 0.94;
+            Bot.Stop("D1");  
+            initiateMovement(100);
+            numOfLoops=0;
             Bot.ToPosition("S1", degreesToDutyCycle(0));
-            Bot.ToPosition("S2", degreesToDutyCycle(35));
             Bot.ToPosition("S3", degreesToDutyCycle(180));
-            servoTickCount=0;
+            Bot.ToPosition("S4", degreesToDutyCycle(0));
             driveIndex++;
             break;
           
           case 1:
-            if(servoTickCount < 120){
-              if(timeUp500msec){
-                Serial.println(servoTickCount);
-                servoTickCount += servoIncr;
-                Bot.ToPosition("S1", degreesToDutyCycle(servoTickCount));
-                timeUp500msec=false;
-                timerCount500msec=0;
-              }
-              // if(timeUp500msec){
-              //   Serial.println(servoTickCount);
-              //   servoTickCount += servoIncr;
-              //   Bot.ToPosition("S1", degreesToDutyCycle(servoTickCount));
-              //   timeUp500msec=false;
-              //   timerCount500msec=0;
-              // }
-            } else {
+            if(!movementComplete){
+              Bot.Forward("D1",leftDriveSpeed, rightDriveSpeed);
+              checkMovementCompletion();
+            } else{
               servoTickCount=0;
               driveIndex++;
             }
             break;
 
           case 2:
-            if(servoTickCount < 120){
-              if(timeUp500msec){
-                Serial.println(servoTickCount);
-                servoTickCount += servoIncr;
-                Bot.ToPosition("S1", degreesToDutyCycle(120-servoTickCount));
-                timeUp500msec=false;
-                timerCount500msec=0;
-              }
-              // if(timeUp500msec){
-              //   Serial.println(servoTickCount);
-              //   servoTickCount += servoIncr;
-              //   Bot.ToPosition("S1", degreesToDutyCycle(100-servoTickCount));
-              //   timeUp500msec=false;
-              //   timerCount500msec=0;
-              // }
+            if(servoTickCount < 100){
+              servoTickCount += servoIncr;
+              Bot.ToPosition("S1", degreesToDutyCycle(servoTickCount));
             } else {
               servoTickCount=0;
               driveIndex++;
@@ -342,9 +300,24 @@ void loop() {
             break;
           
           case 3:
+            if(servoTickCount < 100){
+              servoTickCount += servoIncr;
+              Bot.ToPosition("S4", degreesToDutyCycle(servoTickCount));
+            } else {
+              servoTickCount=0;
+              driveIndex++;
+            }
             break;
           
           case 4:
+            if(servoTickCount < 180){
+              servoTickCount += servoIncr;
+              Bot.ToPosition("S1", degreesToDutyCycle(180-servoTickCount));
+              Bot.ToPosition("S4", degreesToDutyCycle(180-servoTickCount));
+            } else {
+              servoTickCount=0;
+              driveIndex++;
+            }
             break;
 
         }
@@ -361,7 +334,7 @@ void loop() {
           timerCount2sec=0;
           timeUp2sec=false;
         } else {
-          //Serial.println("No green stone detected.");
+          Serial.println("No green stone detected.");
         }
 
         
