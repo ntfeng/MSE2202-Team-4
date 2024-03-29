@@ -34,7 +34,7 @@ void ARDUINO_ISR_ATTR timerISR();
 #define S_STEP_PIN 40                     // GPIO pin for step signal to A4988
 #define D_STEP_PIN 39                     // GPIO pin for direction signal to A4988
 #define SERVO_BACK_DOOR 44
-#define SERVO_SORT 43
+#define SERVO_SORT 45
 #define cSDA 47                    // GPIO pin for I2C data
 #define cSCL 48                    // GPIO pin for I2C clock
 #define cTCSLED 14                    // GPIO pin for LED on TCS34725
@@ -74,6 +74,8 @@ unsigned long currentMicros;                                                   /
 
 boolean timeUp100msec = false;
 unsigned long timerCount100msec = 0;
+boolean timeUp400msec = false;
+unsigned long timerCount400msec = 0;
 
 Motion Bot = Motion();                                                         // Instance of Motion for motor control
 Encoders LeftEncoder = Encoders();                                             // Instance of Encoders for left encoder data
@@ -89,6 +91,8 @@ unsigned int maxLoops = 1;
 unsigned long stepRate = 5000;                       // map to half period in microseconds
 unsigned long servoIncr = 10;
 unsigned long maxAngleArm = 150;
+boolean greenEntered = false;
+unsigned long greenTrue = 0;
 
 Adafruit_NeoPixel SmartLEDs(SMART_LED_COUNT, SMART_LED, NEO_RGB + NEO_KHZ800);
 Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_2_4MS, TCS34725_GAIN_4X);
@@ -134,7 +138,7 @@ void setup() {
   Bot.servoBegin("S3", SERVO_BACK_DOOR); 
 
   Bot.ToPosition("S1", degreesToDutyCycle(0));
-  Bot.ToPosition("S2", degreesToDutyCycle(35));
+  Bot.ToPosition("S2", degreesToDutyCycle(85));
   Bot.ToPosition("S3", degreesToDutyCycle(180));
   // pinMode(SERVO_DOOR_L, OUTPUT);                      // configure servo GPIO for output
   // ledcSetup(SERVO_DOOR_L, 50, 14);                // setup for channel for 50 Hz, 14-bit resolution
@@ -228,6 +232,13 @@ void loop() {
       timeUp200msec = true;                                                 // Indicate that 200 milliseconds have elapsed
     }
 
+    timerCount400msec = timerCount400msec + 1;                               
+    if(timerCount400msec > 400)                                              
+    {
+      timerCount400msec = 0;                                                
+      timeUp400msec = true;                                                
+    }
+
     // 5 second timer, counts 5000 milliseconds
     timerCount5sec = timerCount5sec + 1;                               
     if(timerCount5sec > 5000)                                              
@@ -302,10 +313,11 @@ void loop() {
             // initiateMovement(100);
             // numOfLoops=0;
             Bot.ToPosition("S1", degreesToDutyCycle(0));
-            Bot.ToPosition("S2", degreesToDutyCycle(35));
+            Bot.ToPosition("S2", degreesToDutyCycle(85));
             Bot.ToPosition("S3", degreesToDutyCycle(180));
             timerCount100msec=0;
             servoTickCount=0;
+            greenEntered=false;
             driveIndex++;
             break;
           
@@ -319,7 +331,7 @@ void loop() {
               //   timerCount200msec=0;
               // }
               if(timeUp100msec){
-                Serial.println(servoTickCount);
+                //Serial.println(servoTickCount);
                 servoTickCount += servoIncr;
                 Bot.ToPosition("S1", degreesToDutyCycle(servoTickCount));
                 timeUp100msec=false;
@@ -330,6 +342,7 @@ void loop() {
             } else {
               servoTickCount=0;
               timerCount500msec=0;
+              timeUp500msec=false;
               driveIndex++;
             }
             break;
@@ -342,7 +355,6 @@ void loop() {
           break;
           
           case 3:
-            Serial.println(servoTickCount);
             if(servoTickCount < maxAngleArm){
                 // if(timeUp200msec){
                 //   Serial.println(servoTickCount);
@@ -352,7 +364,7 @@ void loop() {
                 //   timerCount200msec=0;
                 // }
                 if(timeUp100msec){
-                  Serial.println(servoTickCount);
+                  //Serial.println(servoTickCount);
                   servoTickCount += servoIncr;
                   Bot.ToPosition("S1", degreesToDutyCycle(maxAngleArm-servoTickCount));
                   timeUp100msec=false;
@@ -367,7 +379,7 @@ void loop() {
             break;
           
           case 4:
-              Bot.Stop("D1");
+            Bot.Stop("D1");
             break;
 
         }
@@ -379,12 +391,25 @@ void loop() {
         // }
 
         if (isGreen(red_ratio, green_ratio, blue_ratio)) {
-          Serial.println("Green stone detected!");
-          Bot.ToPosition("S2", degreesToDutyCycle(135));
-          timerCount2sec=0;
-          timeUp2sec=false;
+          greenTrue++;
+          Serial.println(greenTrue);
+          if(greenTrue > 3 && !greenEntered)
+          {
+            Serial.println("Green stone detected!");
+            Bot.ToPosition("S2", degreesToDutyCycle(145));
+            greenEntered=true;
+            timerCount400msec=0;
+            timeUp400msec=false;
+          }
+          
         } else {
-          Serial.println("No green stone detected.");
+          //Serial.println("No green stone detected.");
+        }
+
+        if(timeUp400msec && greenEntered){
+          Bot.ToPosition("S2", degreesToDutyCycle(85));
+          greenTrue=0;
+          greenEntered=false;
         }
 
         
