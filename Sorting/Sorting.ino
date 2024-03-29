@@ -67,11 +67,13 @@ unsigned long timerCount2sec = 0;                                              /
 unsigned long timerCount200msec = 0;                                           // 200 millisecond timer count in milliseconds
 unsigned long timerCount500msec = 0;
 unsigned long timerCountsec = 0;
-unsigned long servoIncr = 10;
 unsigned long servoTickCount = 0;
 unsigned long displayTime;                                                     // heartbeat LED update timer
 unsigned long previousMicros;                                                  // last microsecond count
 unsigned long currentMicros;                                                   // current microsecond count
+
+boolean timeUp100msec = false;
+unsigned long timerCount100msec = 0;
 
 Motion Bot = Motion();                                                         // Instance of Motion for motor control
 Encoders LeftEncoder = Encoders();                                             // Instance of Encoders for left encoder data
@@ -85,6 +87,8 @@ volatile int numOfLoops = 0;
 volatile int32_t stepCount = 0;
 unsigned int maxLoops = 1;
 unsigned long stepRate = 5000;                       // map to half period in microseconds
+unsigned long servoIncr = 10;
+unsigned long maxAngleArm = 150;
 
 Adafruit_NeoPixel SmartLEDs(SMART_LED_COUNT, SMART_LED, NEO_RGB + NEO_KHZ800);
 Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_2_4MS, TCS34725_GAIN_4X);
@@ -157,7 +161,8 @@ void setup() {
   pinMode(cTCSLED, OUTPUT);                           // configure GPIO to control LED on TCS34725
   //pinMode(cLEDSwitch, INPUT_PULLUP);                  // configure GPIO to set state of TCS34725 LED 
   digitalWrite(cTCSLED, !digitalRead(cLEDSwitch));    // turn on onboard LED if switch state is low (on position)
-  modePBDebounce = 0;                                                         // reset debounce timer count
+  modePBDebounce = 0;                                                         // reset debounce timer count// Set direction of stepper motor
+  digitalWrite(D_STEP_PIN, stepDir);
 
   pTimer = timerBegin(0, 80, true);                    // start timer 0 (1 of 4) with divide by 80 prescaler for 1 MHz resolution
                                                        // (see ESP32 Technical Reference Manual for more info).
@@ -169,7 +174,7 @@ void setup() {
 void loop() {
 
   uint16_t clear, red, green, blue;
-
+  tcs.getRawData(&red, &green, &blue, &clear);
   // put your main code here, to run repeatedly:
   long pos[] = {0, 0};                                                        // current motor positions
 
@@ -197,6 +202,12 @@ void loop() {
     }
 
     
+    timerCount100msec = timerCount100msec + 1;                                     
+    if (timerCount100msec > 100) {                                             
+      timerCount100msec = 0;                                                   
+      timeUp100msec = true;                                                    
+    }
+
     timerCount500msec = timerCount500msec + 1;                                     
     if (timerCount500msec > 500) {                                             
       timerCount500msec = 0;                                                   
@@ -279,10 +290,10 @@ void loop() {
                 }
 #endif
         
-        // Set direction of stepper motor
-        digitalWrite(D_STEP_PIN, stepDir);
+        
         timerAlarmWrite(pTimer, stepRate, true);             // update interrupt period to adjust step frequency
         
+
         switch(driveIndex){
           case 0:
             // leftDriveSpeed = map(4095, 0, 4095, cMinPWM, cMaxPWM);
@@ -293,58 +304,70 @@ void loop() {
             Bot.ToPosition("S1", degreesToDutyCycle(0));
             Bot.ToPosition("S2", degreesToDutyCycle(35));
             Bot.ToPosition("S3", degreesToDutyCycle(180));
+            timerCount100msec=0;
             servoTickCount=0;
             driveIndex++;
             break;
           
           case 1:
-            if(servoTickCount < 120){
-              if(timeUp200msec){
-                Serial.println(servoTickCount);
-                servoTickCount += servoIncr;
-                Bot.ToPosition("S1", degreesToDutyCycle(servoTickCount));
-                timeUp200msec=false;
-                timerCount200msec=0;
-              }
-              // if(timeUp500msec){
+            if(servoTickCount < maxAngleArm){
+              // if(timeUp200msec){
               //   Serial.println(servoTickCount);
               //   servoTickCount += servoIncr;
               //   Bot.ToPosition("S1", degreesToDutyCycle(servoTickCount));
-              //   timeUp500msec=false;
-              //   timerCount500msec=0;
+              //   timeUp200msec=false;
+              //   timerCount200msec=0;
               // }
+              if(timeUp100msec){
+                Serial.println(servoTickCount);
+                servoTickCount += servoIncr;
+                Bot.ToPosition("S1", degreesToDutyCycle(servoTickCount));
+                timeUp100msec=false;
+                timerCount100msec=0;
+              }
+              // servoTickCount += servoIncr;
+              // Bot.ToPosition("S1", degreesToDutyCycle(servoTickCount));
             } else {
               servoTickCount=0;
+              timerCount500msec=0;
               driveIndex++;
             }
             break;
 
           case 2:
-            if(servoTickCount < 120){
-              if(timeUp200msec){
-                Serial.println(servoTickCount);
-                servoTickCount += servoIncr;
-                Bot.ToPosition("S1", degreesToDutyCycle(120-servoTickCount));
-                timeUp200msec=false;
-                timerCount200msec=0;
-              }
-              // if(timeUp500msec){
-              //   Serial.println(servoTickCount);
-              //   servoTickCount += servoIncr;
-              //   Bot.ToPosition("S1", degreesToDutyCycle(100-servoTickCount));
-              //   timeUp500msec=false;
-              //   timerCount500msec=0;
-              // }
-            } else {
-              servoTickCount=0;
-              driveIndex++;
-            }
-            break;
+            Serial.println("2");
+            if(timeUp500msec){
+                driveIndex++;
+            } 
+          break;
           
           case 3:
+            Serial.println(servoTickCount);
+            if(servoTickCount < maxAngleArm){
+                // if(timeUp200msec){
+                //   Serial.println(servoTickCount);
+                //   servoTickCount += servoIncr;
+                //   Bot.ToPosition("S1", degreesToDutyCycle(120-servoTickCount));
+                //   timeUp200msec=false;
+                //   timerCount200msec=0;
+                // }
+                if(timeUp100msec){
+                  Serial.println(servoTickCount);
+                  servoTickCount += servoIncr;
+                  Bot.ToPosition("S1", degreesToDutyCycle(maxAngleArm-servoTickCount));
+                  timeUp100msec=false;
+                  timerCount100msec=0;
+                }
+                // servoTickCount += servoIncr;
+                // Bot.ToPosition("S1", degreesToDutyCycle(150-servoTickCount));
+              } else {
+                servoTickCount=0;
+                driveIndex++;
+              }
             break;
           
           case 4:
+              Bot.Stop("D1");
             break;
 
         }
@@ -361,7 +384,7 @@ void loop() {
           timerCount2sec=0;
           timeUp2sec=false;
         } else {
-          //Serial.println("No green stone detected.");
+          Serial.println("No green stone detected.");
         }
 
         
