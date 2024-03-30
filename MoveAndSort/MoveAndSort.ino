@@ -30,18 +30,19 @@ void ARDUINO_ISR_ATTR timerISR();
 #define SMART_LED_COUNT     1                                                  // number of SMART LEDs in use
 
 
-#define SERVO_ARM 43
-#define SERVO_DOOR_L 41
+#define SERVO_ARM 41
 #define S_STEP_PIN 40                     // GPIO pin for step signal to A4988
 #define D_STEP_PIN 39                     // GPIO pin for direction signal to A4988
-#define SERVO_DOOR_R 45
-#define SERVO_BACK_DOOR 44
-#define SERVO_SORT 42
+#define SERVO_BACK_DOOR 42
+#define SERVO_SORT 45
 #define cSDA 47                    // GPIO pin for I2C data
 #define cSCL 48                    // GPIO pin for I2C clock
 #define cTCSLED 14                    // GPIO pin for LED on TCS34725
 #define cLEDSwitch 46
 #define cServoChannel 5
+
+#define ECHO_PIN 43
+#define TRIG_PIN 44
 
 const int cDisplayUpdate = 100;
 const int cPWMRes = 8;                                                         // bit resolution for PWM
@@ -53,6 +54,8 @@ boolean timeUp5sec = false;
 boolean timeUp3sec = false;                                                    // 3 second timer elapsed flag
 boolean timeUp2sec = false;                                                    // 2 second timer elapsed flag
 boolean timeUp200msec = false;  
+boolean timeUp500msec = false;
+boolean timeUpsec = false;
 boolean movementComplete = false;
 boolean valuableDetected = false;
 boolean stepDir = false;
@@ -65,11 +68,17 @@ unsigned long timerCount5sec = 0;
 unsigned long timerCount3sec = 0;                                              // 3 second timer count in milliseconds
 unsigned long timerCount2sec = 0;                                              // 2 second timer count in milliseconds
 unsigned long timerCount200msec = 0;                                           // 200 millisecond timer count in milliseconds
-unsigned long servoIncr = 10;
+unsigned long timerCount500msec = 0;
+unsigned long timerCountsec = 0;
 unsigned long servoTickCount = 0;
 unsigned long displayTime;                                                     // heartbeat LED update timer
 unsigned long previousMicros;                                                  // last microsecond count
 unsigned long currentMicros;                                                   // current microsecond count
+
+boolean timeUp100msec = false;
+unsigned long timerCount100msec = 0;
+boolean timeUp800msec = false;
+unsigned long timerCount800msec = 0;
 
 Motion Bot = Motion();                                                         // Instance of Motion for motor control
 Encoders LeftEncoder = Encoders();                                             // Instance of Encoders for left encoder data
@@ -83,6 +92,12 @@ volatile int numOfLoops = 0;
 volatile int32_t stepCount = 0;
 unsigned int maxLoops = 1;
 unsigned long stepRate = 5000;                       // map to half period in microseconds
+unsigned long servoIncr = 10;
+unsigned long maxAngleArm = 120;
+boolean greenEntered = false;
+unsigned long greenTrue = 0;
+unsigned long duration;
+unsigned int distance;
 
 Adafruit_NeoPixel SmartLEDs(SMART_LED_COUNT, SMART_LED, NEO_RGB + NEO_KHZ800);
 Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_2_4MS, TCS34725_GAIN_4X);
@@ -123,12 +138,13 @@ void setup() {
   pinMode(MODE_BUTTON, INPUT_PULLUP);                                         // Set up mode pushbutton
 
   // Servos
-  Bot.servoBegin("S1", SERVO_DOOR_L); 
+  Bot.servoBegin("S1", SERVO_ARM); 
   Bot.servoBegin("S2", SERVO_SORT); 
   Bot.servoBegin("S3", SERVO_BACK_DOOR); 
-  Bot.servoBegin("S4", SERVO_ARM); 
 
-  Bot.ToPosition("S1", degreesToDutyCycle(0));
+  Bot.ToPosition("S1", degreesToDutyCycle(120));
+  Bot.ToPosition("S2", degreesToDutyCycle(85));
+  Bot.ToPosition("S3", degreesToDutyCycle(180));
   // pinMode(SERVO_DOOR_L, OUTPUT);                      // configure servo GPIO for output
   // ledcSetup(SERVO_DOOR_L, 50, 14);                // setup for channel for 50 Hz, 14-bit resolution
 
@@ -152,20 +168,25 @@ void setup() {
   
   Wire.setPins(cSDA, cSCL);                           // set I2C pins for TCS34725
   pinMode(cTCSLED, OUTPUT);                           // configure GPIO to control LED on TCS34725
-  pinMode(cLEDSwitch, INPUT_PULLUP);                  // configure GPIO to set state of TCS34725 LED 
-  modePBDebounce = 0;                                                         // reset debounce timer count
+  //pinMode(cLEDSwitch, INPUT_PULLUP);                  // configure GPIO to set state of TCS34725 LED 
+  digitalWrite(cTCSLED, !digitalRead(cLEDSwitch));    // turn on onboard LED if switch state is low (on position)
+  modePBDebounce = 0;                                                         // reset debounce timer count// Set direction of stepper motor
+  digitalWrite(D_STEP_PIN, stepDir);
 
   pTimer = timerBegin(0, 80, true);                    // start timer 0 (1 of 4) with divide by 80 prescaler for 1 MHz resolution
                                                        // (see ESP32 Technical Reference Manual for more info).
   timerAttachInterrupt(pTimer, &timerISR, true);       // configure timer ISR
   timerAlarmWrite(pTimer, 500, true);                  // set initial interrupt time (in microseconds), set to repeat
-  timerAlarmEnable(pTimer);                            // enable timer interrupt
+  timerAlarmEnable(pTimer);
+
+  pinMode(TRIG_PIN, OUTPUT); // Sets the trigPin as an Output
+  pinMode(ECHO_PIN, INPUT); // Sets the echoPin as an Input
 }
 
 void loop() {
 
   uint16_t clear, red, green, blue;
-
+  tcs.getRawData(&red, &green, &blue, &clear);
   // put your main code here, to run repeatedly:
   long pos[] = {0, 0};                                                        // current motor positions
 
@@ -191,6 +212,25 @@ void loop() {
       timerCount2sec = 0;                                                   // reset 2 second timer count
       timeUp2sec = true;                                                    // indicate that 2 seconds have elapsed
     }
+
+    
+    timerCount100msec = timerCount100msec + 1;                                     
+    if (timerCount100msec > 100) {                                             
+      timerCount100msec = 0;                                                   
+      timeUp100msec = true;                                                    
+    }
+
+    timerCount500msec = timerCount500msec + 1;                                     
+    if (timerCount500msec > 500) {                                             
+      timerCount500msec = 0;                                                   
+      timeUp500msec = true;                                                    
+    }
+
+    timerCountsec = timerCountsec + 1;                                     
+    if (timerCountsec > 1000) {                                             
+      timerCountsec = 0;                                                   
+      timeUpsec = true;                                                    
+    }
    
     // 200 millisecond timer, counts 200 milliseconds
     timerCount200msec = timerCount200msec + 1;                               // Increment 200 millisecond timer count
@@ -198,6 +238,13 @@ void loop() {
     {
       timerCount200msec = 0;                                                // Reset 200 millisecond timer count
       timeUp200msec = true;                                                 // Indicate that 200 milliseconds have elapsed
+    }
+
+    timerCount800msec = timerCount800msec + 1;                               
+    if(timerCount800msec > 700)                                              
+    {
+      timerCount800msec = 0;                                                
+      timeUp800msec = true;                                                
     }
 
     // 5 second timer, counts 5000 milliseconds
@@ -262,65 +309,69 @@ void loop() {
                 }
 #endif
         
-        // Set direction of stepper motor
-        digitalWrite(D_STEP_PIN, stepDir);
+        
         timerAlarmWrite(pTimer, stepRate, true);             // update interrupt period to adjust step frequency
         
         switch(driveIndex){
           case 0:
             leftDriveSpeed = map(4095, 0, 4095, cMinPWM, cMaxPWM);
-            rightDriveSpeed = map(4095, 0, 4095, cMinPWM, cMaxPWM) * 0.94;
+            rightDriveSpeed = map(4095, 0, 4095, cMinPWM, cMaxPWM);
             Bot.Stop("D1");  
             initiateMovement(100);
             numOfLoops=0;
             Bot.ToPosition("S1", degreesToDutyCycle(0));
+            Bot.ToPosition("S2", degreesToDutyCycle(85));
             Bot.ToPosition("S3", degreesToDutyCycle(180));
-            Bot.ToPosition("S4", degreesToDutyCycle(0));
+            timerCount100msec=0;
+            servoTickCount=0;
+            greenEntered=false;
             driveIndex++;
             break;
           
-          case 1:
-            if(!movementComplete){
-              Bot.Forward("D1",leftDriveSpeed, rightDriveSpeed);
-              checkMovementCompletion();
-            } else{
-              servoTickCount=0;
-              driveIndex++;
-            }
-            break;
+          // case 1:
+          //   if(!movementComplete){
+          //     Bot.Forward("D1",leftDriveSpeed, rightDriveSpeed);
+          //     checkMovementCompletion();
+          //   } else{
+          //     servoTickCount=0;
+          //     driveIndex++;
+          //   }
+          //   break;
 
-          case 2:
-            if(servoTickCount < 100){
-              servoTickCount += servoIncr;
-              Bot.ToPosition("S1", degreesToDutyCycle(servoTickCount));
-            } else {
-              servoTickCount=0;
-              driveIndex++;
-            }
-            break;
+          // case 2:
+          //   if(servoTickCount < 100){
+          //     servoTickCount += servoIncr;
+          //     Bot.ToPosition("S1", degreesToDutyCycle(servoTickCount));
+          //   } else {
+          //     servoTickCount=0;
+          //     driveIndex++;
+          //   }
+          //   break;
           
-          case 3:
-            if(servoTickCount < 100){
-              servoTickCount += servoIncr;
-              Bot.ToPosition("S4", degreesToDutyCycle(servoTickCount));
-            } else {
-              servoTickCount=0;
-              driveIndex++;
-            }
-            break;
+          // case 3:
+          //   if(servoTickCount < 100){
+          //     servoTickCount += servoIncr;
+          //     Bot.ToPosition("S4", degreesToDutyCycle(servoTickCount));
+          //   } else {
+          //     servoTickCount=0;
+          //     driveIndex++;
+          //   }
+          //   break;
           
-          case 4:
-            if(servoTickCount < 180){
-              servoTickCount += servoIncr;
-              Bot.ToPosition("S1", degreesToDutyCycle(180-servoTickCount));
-              Bot.ToPosition("S4", degreesToDutyCycle(180-servoTickCount));
-            } else {
-              servoTickCount=0;
-              driveIndex++;
-            }
-            break;
+          // case 4:
+          //   if(servoTickCount < 180){
+          //     servoTickCount += servoIncr;
+          //     Bot.ToPosition("S1", degreesToDutyCycle(180-servoTickCount));
+          //     Bot.ToPosition("S4", degreesToDutyCycle(180-servoTickCount));
+          //   } else {
+          //     servoTickCount=0;
+          //     driveIndex++;
+          //   }
+          //   break;
 
         }
+
+      
 
         //Sorting
         //if color sensor detects valuable {
@@ -328,14 +379,14 @@ void loop() {
           // timerCount5sec=5000;
         // }
 
-        if (isGreen(red_ratio, green_ratio, blue_ratio)) {
-          Serial.println("Green stone detected!");
-          Bot.ToPosition("S2", degreesToDutyCycle(135));
-          timerCount2sec=0;
-          timeUp2sec=false;
-        } else {
-          Serial.println("No green stone detected.");
-        }
+        // if (isGreen(red_ratio, green_ratio, blue_ratio)) {
+        //   Serial.println("Green stone detected!");
+        //   Bot.ToPosition("S2", degreesToDutyCycle(135));
+        //   timerCount2sec=0;
+        //   timeUp2sec=false;
+        // } else {
+        //   Serial.println("No green stone detected.");
+        // }
 
         
         break;

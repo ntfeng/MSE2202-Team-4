@@ -4,7 +4,18 @@
 // sensor instance 
 Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);
 
+#define cSDA 47                    // GPIO pin for I2C data
+#define cSCL 48                    // GPIO pin for I2C clock
+#define cTCSLED 14                    // GPIO pin for LED on TCS34725
+#define cLEDSwitch 46
+
 void setup() {
+  
+  Wire.setPins(cSDA, cSCL);                           // set I2C pins for TCS34725
+  pinMode(cTCSLED, OUTPUT);                           // configure GPIO to control LED on TCS34725
+  //pinMode(cLEDSwitch, INPUT_PULLUP);                  // configure GPIO to set state of TCS34725 LED 
+  digitalWrite(cTCSLED, !digitalRead(cLEDSwitch));    // turn on onboard LED if switch state is low (on position)
+
   Serial.begin(9600);
   if (tcs.begin()) {
     Serial.println("Found TCS34725 sensor");
@@ -45,5 +56,5 @@ void loop() {
 
 bool isGreen(float red_ratio, float green_ratio, float blue_ratio) {
   // Adjust thresholds based on environment
-  return green_ratio > red_ratio && green_ratio > blue_ratio && green_ratio > 0.33;
+  return green_ratio > red_ratio && green_ratio > blue_ratio && green_ratio > 0.37;
 }
