@@ -16,6 +16,14 @@ void Indicator();                                                              /
 void ARDUINO_ISR_ATTR timerISR();
 
 // Port pin constants
+#define LEFT_MOTOR_A        35                                                 // GPIO35 pin 28 (J35) Motor 1 A
+#define LEFT_MOTOR_B        36                                                 // GPIO36 pin 29 (J36) Motor 1 B
+#define RIGHT_MOTOR_A       37                                                 // GPIO37 pin 30 (J37) Motor 2 A
+#define RIGHT_MOTOR_B       38                                                 // GPIO38 pin 31 (J38) Motor 2 B
+#define ENCODER_LEFT_A      15                                                 // left encoder A signal is connected to pin 8 GPIO15 (J15)
+#define ENCODER_LEFT_B      16                                                 // left encoder B signal is connected to pin 8 GPIO16 (J16)
+#define ENCODER_RIGHT_A     11                                                 // right encoder A signal is connected to pin 19 GPIO11 (J11)
+#define ENCODER_RIGHT_B     12                                                 // right encoder B signal is connected to pin 20 GPIO12 (J12)
 #define MODE_BUTTON         0                                                  // GPIO0  pin 27 for Push Button 1
 #define MOTOR_ENABLE_SWITCH 3                                                  // DIP Switch S1-1 pulls Digital pin D3 to ground when on, connected to pin 15 GPIO3 (J3)
 #define SMART_LED           21                                                 // when DIP Switch S1-4 is on, Smart LED is connected to pin 23 GPIO21 (J21)
@@ -102,6 +110,11 @@ const int cCountsRev = 1096;
 
 void setup() {
   // put your setup code here, to run once:
+
+  // Set up motors and encoders
+  Bot.driveBegin("D1", LEFT_MOTOR_A, LEFT_MOTOR_B, RIGHT_MOTOR_A, RIGHT_MOTOR_B); // set up motors as Drive 1
+  LeftEncoder.Begin(ENCODER_LEFT_A, ENCODER_LEFT_B, &Bot.iLeftMotorRunning ); // set up left encoder
+  RightEncoder.Begin(ENCODER_RIGHT_A, ENCODER_RIGHT_B, &Bot.iRightMotorRunning ); // set up right encoder
 
   // Set up SmartLED
   SmartLEDs.begin();                                                          // initialize smart LEDs object (REQUIRED)
@@ -255,6 +268,10 @@ void loop() {
     switch(robotModeIndex) {
       case 0: // Robot stopped
         Bot.Stop("D1");    
+        leftDriveSpeed = map(3000, 0, 4095, cMinPWM, cMaxPWM);
+        rightDriveSpeed = map(3000, 0, 4095, cMinPWM, cMaxPWM);
+        LeftEncoder.clearEncoder();                                        // clear encoder counts
+        RightEncoder.clearEncoder();
         driveIndex = 0;                                                    // reset drive index
         timeUp2sec = false;                                                // reset 2 second timer
         greenEntered=false;
@@ -262,6 +279,22 @@ void loop() {
         break;
 
       case 1:
+
+#ifdef DEBUG_ENCODER_COUNT
+                if (timeUp200msec) {
+                   timeUp200msec = false;                                       // reset 200 ms timer
+                   LeftEncoder.getEncoderRawCount();                            // read left encoder count 
+                   RightEncoder.getEncoderRawCount();                           // read right encoder count
+              //     Serial.print(F("Left Encoder count = "));
+              //     Serial.print(LeftEncoder.lRawEncoderCount);
+              //     Serial.print(F("  Right Encoder count = "));
+              //     Serial.print(RightEncoder.lRawEncoderCount);
+              //     Serial.print("\n");
+                }
+#endif  
+
+        Bot.Forward("D1",leftDriveSpeed, rightDriveSpeed);
+
         timerAlarmWrite(pTimer, stepRate, true);             // update interrupt period to adjust step frequency
 
         Serial.print("Red Ratio: ");

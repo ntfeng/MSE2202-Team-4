@@ -31,10 +31,15 @@ void ARDUINO_ISR_ATTR timerISR();
 
 
 #define SERVO_ARM 45
-#define SERVO_BACK_DOOR 40
-#define ECHO_PIN 41
-#define TRIG_PIN 42
+#define SERVO_BACK_DOOR 18
+//#define TRIG_PIN 42
+//#define ECHO_PIN 41
 #define cServoChannel 5
+
+const int trigPin = 42;
+const int echoPin = 41;
+
+#define IR_DETECTOR         14                                                 // GPIO14 pin 17 (J14) IR detector input
 
 const int cDisplayUpdate = 100;
 const int cPWMRes = 8;                                                         // bit resolution for PWM
@@ -88,8 +93,10 @@ volatile int32_t stepCount = 0;
 unsigned int maxLoops = 1;                    // map to half period in microseconds
 unsigned long servoIncr = 10;
 unsigned long maxAngleArm = 120;
-unsigned long duration;
-unsigned int distance;
+long duration;
+int distance;
+boolean isLeft = true;
+unsigned int shortDistCount=0;
 
 Adafruit_NeoPixel SmartLEDs(SMART_LED_COUNT, SMART_LED, NEO_RGB + NEO_KHZ800);
 Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_2_4MS, TCS34725_GAIN_4X);
@@ -111,9 +118,12 @@ volatile long targetCount = 0;  // Target encoder count for movements
 volatile bool turnComplete = false;
 const int cCountsRev = 1096; 
 
+IR Scan = IR();                                                                // instance of IR for detecting IR signals
+int turned_amount;
 
 void setup() {
   // put your setup code here, to run once:
+  Serial.begin(115200);
 
   // Set up motors and encoders
   Bot.driveBegin("D1", LEFT_MOTOR_A, LEFT_MOTOR_B, RIGHT_MOTOR_A, RIGHT_MOTOR_B); // set up motors as Drive 1
@@ -131,8 +141,10 @@ void setup() {
 
   // Servos
   Bot.servoBegin("S1", SERVO_ARM); 
+  Bot.servoBegin("S2", SERVO_BACK_DOOR);
 
-  Bot.ToPosition("S1", degreesToDutyCycle(150));
+  Bot.ToPosition("S1", degreesToDutyCycle(90));
+  Bot.ToPosition("S2", degreesToDutyCycle(180));
   // pinMode(SERVO_DOOR_L, OUTPUT);                      // configure servo GPIO for output
   // ledcSetup(SERVO_DOOR_L, 50, 14);                // setup for channel for 50 Hz, 14-bit resolution
 
@@ -151,13 +163,16 @@ void setup() {
   // pinMode(SERVO_ARM, OUTPUT);                      // configure servo GPIO for output
   // ledcSetup(SERVO_ARM, 50, 14);                // setup for channel for 50 Hz, 14-bit resolution
 
-  pinMode(TRIG_PIN, OUTPUT); // Sets the trigPin as an Output
-  pinMode(ECHO_PIN, INPUT); // Sets the echoPin as an Input
+  pinMode(trigPin, OUTPUT); // Sets the trigPin as an Output
+  pinMode(echoPin, INPUT); // Sets the echoPin as an Input
+
+  Scan.Begin(IR_DETECTOR, 1200);  
 }
 
 void loop() {
 
   currentMicros = micros();                                                   // get current time in microseconds
+
   if ((currentMicros - previousMicros) >= 1000) {                             // enter when 1 ms has elapsed
     previousMicros = currentMicros;                                          // record current time in microseconds
 
@@ -283,11 +298,13 @@ void loop() {
         switch(driveIndex){
           case 0:
             leftDriveSpeed = map(4095, 0, 4095, cMinPWM, cMaxPWM);
-            rightDriveSpeed = map(4095, 0, 4095, cMinPWM, cMaxPWM);
+            rightDriveSpeed = (map(4095, 0, 4095, cMinPWM, cMaxPWM));
+
             Bot.Stop("D1");  
             initiateMovement(50);
             numOfLoops=0;
-            Bot.ToPosition("S1", degreesToDutyCycle(0));
+            Bot.ToPosition("S1", degreesToDutyCycle(1));
+            Bot.ToPosition("S2", degreesToDutyCycle(180));
             servoTickCount=0;
             driveIndex++;
             break;
@@ -298,23 +315,12 @@ void loop() {
               checkMovementCompletion();
             } else{
               servoTickCount=0;
-              initiateMovement(20);
-              driveIndex++;
-            }
-            break;
-          
-          case 2:
-            if(!movementComplete){
-              Bot.Forward("D1",leftDriveSpeed*3, rightDriveSpeed*3);
-              checkMovementCompletion();
-            } else{
-              servoTickCount=0;
               Bot.Stop("D1");
               driveIndex++;
             }
             break;
 
-          case 3:
+          case 2:
             if(servoTickCount < maxAngleArm){
               // if(timeUp200msec){
               //   Serial.println(servoTickCount);
@@ -334,19 +340,72 @@ void loop() {
               // Bot.ToPosition("S1", degreesToDutyCycle(servoTickCount));
             } else {
               servoTickCount=0;
-              timerCount500msec=0;
-              timeUp500msec=false;
+              timerCount100msec=0;
+              timeUp100msec=false;
+              initiateTurn(45);
+              initiateMovement(50);
               driveIndex++;
+            }
+            break;
+          
+          case 3:
+            if(!movementComplete){
+              Bot.Reverse("D1",leftDriveSpeed, rightDriveSpeed);
+              checkMovementCompletion();
+            } else{
+              Bot.Stop("D1");
+              driveIndex=5;
             }
             break;
 
           case 4:
-            if(timeUp500msec){
-                driveIndex++;
+            if(timeUp100msec){
+              // scan for IR light - check if IR is returning "U"
+              if(Scan.Available()){
+                if (Scan.Get_IR_Data() == 'U'){                             // when first motor encoder value is less than or equal to 2739 pulses
+                  Bot.Stop("D1");
+                  Serial.print("found IR");
+                  initiateMovement(18);
+                  driveIndex++;
+                  break;
+                }
+              }
+
+              
+              if (!turnComplete){
+                if(isLeft)
+                {
+                  Bot.Left("D1", 200, 200);
+                } else {
+                  Bot.Right("D1", 200, 200);
+                }
+                isTurnComplete();   
+              }
+              else{
+                if(isLeft)
+                {
+                  isLeft=false;
+                } else {
+                  isLeft=true;
+                }
+                initiateTurn(90);
+              }
+
+              
             } 
           break;
-          
+
           case 5:
+            if(!movementComplete){
+              Bot.Reverse("D1",leftDriveSpeed, rightDriveSpeed);
+              checkMovementCompletion();
+            } else{
+              Bot.Stop("D1");
+              driveIndex++;
+            }
+            break;
+          
+          case 6:
             if(servoTickCount < maxAngleArm){
                 // if(timeUp200msec){
                 //   Serial.println(servoTickCount);
@@ -365,16 +424,53 @@ void loop() {
                 // servoTickCount += servoIncr;
                 // Bot.ToPosition("S1", degreesToDutyCycle(150-servoTickCount));
               } else {
+                // initiateMovement(200);
                 servoTickCount=0;
+                Bot.Stop("D1");
                 driveIndex++;
               }
             break;
-          
-          case 6:
+
+          // case 5:
+          //   ledcDetachPin(35);
+          //   ledcDetachPin(36);
+          //   ledcDetachPin(37);
+          //   ledcDetachPin(38);
+          //   ledcDetachPin(21);
+          //   ledcDetachPin(45);
+          //   ledcDetachPin(40);
+          //   ledcDetachPin(15);
+          //   ledcDetachPin(16);
+          //   ledcDetachPin(11);
+          //   ledcDetachPin(12);
+          //   ledcDetachPin(14);
+          //   driveIndex++;
+          //   break;
+          // case 5:
+          //   // Sets the trigPin on HIGH state for 10 micro seconds
+          //   digitalWrite(trigPin, HIGH);
+          //   delayMicroseconds(10);
+          //   digitalWrite(trigPin, LOW);
+          //   // Reads the echoPin, returns the sound wave travel time in microseconds
+          //   duration = pulseIn(echoPin, HIGH);
+          //   // Calculating the distance
+          //   distance = duration * 0.034 / 2;
+          //   // Prints the distance on the Serial Monitor
+          //   Serial.print("Distance: ");
+          //   Serial.println(distance);
+          //   Serial.println(driveIndex);
+          //   break;
+
+
+          case 7:
+            Bot.ToPosition("S2", degreesToDutyCycle(90));
             Bot.Stop("D1");
             break;
 
+
         }
+
+        
 
         // Clears the trigPin
       // digitalWrite(TRIG_PIN, LOW);
@@ -390,27 +486,6 @@ void loop() {
       // // Prints the distance on the Serial Monitor
       // Serial.print("Distance: ");
       // Serial.println(distance);
-      if(timeUpmsec && ultraMode==0){
-        digitalWrite(TRIG_PIN, LOW);
-        timeUpmsec=false;
-        ultraMode++;
-      }
-      if(timeUpmsec && ultraMode==1){
-        digitalWrite(TRIG_PIN, HIGH);
-        timeUpmsec=false;
-        ultraMode++;
-      }
-      if(timeUpmsec && ultraMode==2){
-        timeUpmsec=false;
-        digitalWrite(TRIG_PIN, LOW);
-        duration = pulseIn(ECHO_PIN, HIGH);
-        // Calculating the distance
-        distance = duration * 0.034 / 2;
-        // Prints the distance on the Serial Monitor
-        Serial.print("Distance: ");
-        Serial.println(distance);
-        ultraMode=0;
-      }
         break;
       
       case 2:
